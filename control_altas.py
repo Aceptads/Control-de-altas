@@ -111,11 +111,18 @@ def first_word(text: str) -> str:
 
 
 def parse_number(value) -> float | None:
-    """Convierte '$5,000.00', '5000', '4' -> float. Devuelve None si no se puede."""
+    """Convierte 3000, '3000', '$3,000.00' -> float. Devuelve None si no se puede.
+
+    La hoja se lee con UNFORMATTED_VALUE, así que los números llegan ya como
+    int/float (sin ambigüedad de separador de miles). El parseo de texto es
+    solo un respaldo para cuando alguien captura el costo como texto.
+    """
     if value is None:
         return None
+    if isinstance(value, (int, float)):
+        return float(value)
     s = re.sub(r"[^0-9.,-]", "", str(value).strip())
-    s = s.replace(",", "")  # se asume ',' separador de miles, '.' decimal (formato MX)
+    s = s.replace(",", "")  # respaldo: ',' como separador de miles
     if s in ("", "-", ".", "-."):
         return None
     try:
@@ -253,8 +260,12 @@ def best_match(name: str, email: str, records: list[dict]) -> tuple[dict | None,
 # --------------------------------------------------------------------------- #
 # Proceso principal                                                            #
 # --------------------------------------------------------------------------- #
-def cell(row: list[str], index: int) -> str:
-    return row[index].strip() if index < len(row) and row[index] is not None else ""
+def cell(row: list, index: int) -> str:
+    """Devuelve el valor de la celda como texto (los números llegan como int/float
+    por leer con UNFORMATTED_VALUE, así que se convierten a str de forma segura)."""
+    if index >= len(row) or row[index] is None:
+        return ""
+    return str(row[index]).strip()
 
 
 def main() -> None:
@@ -272,7 +283,11 @@ def main() -> None:
     result = (
         sheets.spreadsheets()
         .values()
-        .get(spreadsheetId=SPREADSHEET_ID, range=read_range)
+        .get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=read_range,
+            valueRenderOption="UNFORMATTED_VALUE",
+        )
         .execute()
     )
     rows = result.get("values", [])
