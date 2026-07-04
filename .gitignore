@@ -1,0 +1,12 @@
+# Nunca subir credenciales
+*.json
+!.github/**/*.json
+service-account*.json
+credentials*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env

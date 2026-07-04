@@ -1,0 +1,39 @@
+name: Control de altas
+
+# Botón manual: se ejecuta desde la pestaña "Actions" del repositorio.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo mostrar (no escribir en la hoja)"
+        type: boolean
+        default: false
+      overwrite:
+        description: "Sobrescribir celdas que ya tengan contenido"
+        type: boolean
+        default: false
+
+jobs:
+  altas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar control de altas
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: "10mn2MK2ipBTpbcVm2wl4lUVfHt-WXuTFRoM88dxEUuc"
+          FORM_ID: "1m5UruvwSlDdvGrMqKnrMQs3ptN1lLgD51sIGA7wHfUA"
+          SHEET_NAME: "Altas"
+          DRY_RUN: ${{ inputs.dry_run }}
+          OVERWRITE: ${{ inputs.overwrite }}
+        run: python control_altas.py
