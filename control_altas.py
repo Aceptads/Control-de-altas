@@ -28,6 +28,7 @@ import os
 import re
 import sys
 import unicodedata
+from datetime import datetime
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -120,6 +121,17 @@ def norm_si(text: str) -> str:
 
 def valid_email(text: str) -> bool:
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (text or "").strip()))
+
+
+def fecha_hoy() -> str:
+    """Fecha de hoy en México como texto dd/mm/aaaa."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        ahora = datetime.now(ZoneInfo("America/Mexico_City"))
+    except Exception:  # noqa: BLE001  (respaldo si falta la base de zonas)
+        ahora = datetime.now()
+    return ahora.strftime("%d/%m/%Y")
 
 
 def first_word(text: str) -> str:
@@ -422,11 +434,13 @@ def main() -> None:
     data_rows = rows[HEADER_ROWS:]
     print(f"  {len(data_rows)} filas de datos.")
 
+    hoy = fecha_hoy()
     updates: list[dict] = []
     n_matched = 0
     n_not_found = 0
     n_docs = 0
     n_claves = 0
+    n_fechas = 0
 
     # Folios por clave: arranca en el máximo ya presente en la columna K para
     # NO reasignar folios existentes (una clave asignada es permanente).
@@ -497,6 +511,15 @@ def main() -> None:
         alta = norm_si(cell(row, 9))     # J
         should_send = (enviada != "si") or (alta == "no")
 
+        # B: fecha en que el flujo (re)procesa la fila. Se (re)escribe cada vez
+        # que la fila es alta nueva (I en blanco) o se reprocesa (J='No'). Se
+        # guarda como texto (apóstrofo) para que la hoja no reinterprete d/m/a.
+        if should_send:
+            updates.append(
+                {"range": f"'{SHEET_NAME}'!B{sheet_row}", "values": [["'" + hoy]]}
+            )
+            n_fechas += 1
+
         if SEND_DOCS and gmail and should_send:
             if not valid_email(correo):
                 print(f"    → sin correo válido en C; no se envía documentación")
@@ -539,7 +562,7 @@ def main() -> None:
     print(
         f"\nResumen: {n_matched} emparejadas, {n_not_found} sin respuesta, "
         f"{n_docs} con documentación enviada, {n_claves} claves asignadas, "
-        f"{len(updates)} celdas por escribir."
+        f"{n_fechas} fechas actualizadas, {len(updates)} celdas por escribir."
     )
 
     if not updates:
