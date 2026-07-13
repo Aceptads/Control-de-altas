@@ -68,6 +68,11 @@ tomando el catálogo de la pestaña **Claves** (`Curso`, `Especialidad`, `Clave`
 - **Escuela con especialidad** → se empareja la **carrera (columna D)** contra la
   columna *Especialidad* de Claves y se usa la clave completa: `UAM-CBI-001`,
   `UAEH-MEDICINA-001`…
+  El emparejamiento es **tolerante**: acepta la sigla (`CBI`), el nombre completo
+  (*"Ciencias Básicas e Ingenierías"*), un pedazo o pequeños errores de captura.
+  Los nombres completos viven en `ESPECIALIDAD_ALIASES` dentro de
+  `control_altas.py` (ahí se agregan más conforme aparezcan). Si la carrera es
+  ambigua (p. ej. solo *"Ciencias"*) o no coincide, la fila se deja **sin clave**.
 
 El **folio se cuenta por cada clave** (cada una arranca en `001`) y continúa a
 partir del folio más alto que ya exista en la columna K, para **no reasignar**

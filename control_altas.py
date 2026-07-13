@@ -302,12 +302,52 @@ def load_claves(sheets) -> dict:
     return by_curso
 
 
+# La carrera capturada (col D) NO siempre trae la sigla: puede venir el nombre
+# completo o un pedazo. Aquí se mapea cada clave a sus nombres completos para
+# poder emparejarla. Ampliable: agrega más entradas conforme aparezcan casos.
+ESPECIALIDAD_ALIASES = {
+    "UAM-CBI": ["Ciencias Básicas e Ingenierías"],
+    "UAM-CBS": ["Ciencias Biológicas y de la Salud"],
+    "UAM-CSH": ["Ciencias Sociales y Humanidades"],
+    "UAM-CYAD": ["Ciencias y Artes para el Diseño"],
+}
+
+# Umbral (0-100) de similitud difusa para emparejar la carrera con el NOMBRE
+# COMPLETO de una especialidad cuando no hay coincidencia exacta ni por sigla.
+ESP_FUZZ_THRESHOLD = int(os.environ.get("ESP_FUZZ_THRESHOLD", "82"))
+
+
+def _esp_match_score(carrera_norm: str, target_norm: str) -> float:
+    """Qué tanto se parece la carrera a un objetivo (sigla o nombre completo)."""
+    if not target_norm:
+        return 0.0
+    if carrera_norm == target_norm:
+        return 100.0
+    if len(target_norm) <= 5:
+        # Es una sigla (CBI, CSH…): exige que aparezca como palabra completa;
+        # NO se usa difuso porque con siglas es poco fiable.
+        if re.search(rf"(^|\W){re.escape(target_norm)}(\W|$)", carrera_norm):
+            return 95.0
+        return 0.0
+    # Nombre completo: contención o similitud difusa (tolera pedazos/typos).
+    if target_norm in carrera_norm or carrera_norm in target_norm:
+        return 90.0
+    return float(fuzz.token_set_ratio(carrera_norm, target_norm))
+
+
+def _cand_score(carrera_norm: str, cand: dict) -> float:
+    targets = [cand["esp_norm"]]
+    targets += [norm_title(a) for a in ESPECIALIDAD_ALIASES.get(norm_title(cand["clave"]), [])]
+    return max((_esp_match_score(carrera_norm, t) for t in targets), default=0.0)
+
+
 def clave_base(curso: str, carrera: str, by_curso: dict) -> tuple[str | None, str]:
     """Devuelve (base, error). La base es la clave SIN el folio.
 
     - Escuela sin especialidad (esp 'SN' o vacía): base = la escuela (p.ej. UNAM).
-    - Escuela con especialidades: se empareja la carrera (col D) contra la
-      columna Especialidad de Claves; base = la clave completa (p.ej. UAM-CBI).
+    - Escuela con especialidades: se empareja la carrera (col D) contra la sigla
+      Y el nombre completo de cada especialidad (tolerante a nombre completo,
+      pedazos y acentos); base = la clave completa (p.ej. UAM-CBI).
     """
     cands = by_curso.get(norm_title(curso))
     if not cands:
@@ -318,14 +358,17 @@ def clave_base(curso: str, carrera: str, by_curso: dict) -> tuple[str | None, st
         return sn[0]["curso"], ""
 
     d = norm_title(carrera)
-    if d:
-        for c in cands:  # coincidencia exacta primero
-            if c["esp_norm"] == d:
-                return c["clave"], ""
-        for c in cands:  # si no, por contención
-            if c["esp_norm"] and (c["esp_norm"] in d or d in c["esp_norm"]):
-                return c["clave"], ""
-    return None, "no pude determinar la especialidad (col D)"
+    if not d:
+        return None, "no pude determinar la especialidad (col D vacía)"
+
+    scored = sorted(((_cand_score(d, c), c) for c in cands), key=lambda x: x[0], reverse=True)
+    top = scored[0][0]
+    if top < ESP_FUZZ_THRESHOLD:
+        return None, f"la carrera «{carrera}» no coincide con ninguna especialidad"
+    winners = {c["clave"] for s, c in scored if s == top}
+    if len(winners) > 1:
+        return None, f"la carrera «{carrera}» es ambigua entre {sorted(winners)}"
+    return scored[0][1]["clave"], ""
 
 
 # --------------------------------------------------------------------------- #
