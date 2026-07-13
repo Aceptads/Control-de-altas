@@ -28,12 +28,18 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 GMAIL_SENDER = os.environ.get("GMAIL_SENDER", "aceptados.cursos@gmail.com")
+GMAIL_SENDER_NAME = os.environ.get(
+    "GMAIL_SENDER_NAME", "Aceptados Exámenes de Admisión"
+)
 GMAIL_TOKEN_URI = "https://oauth2.googleapis.com/token"
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DOCS_DIR = os.path.join(_HERE, "docs")
 PLANTILLA_DIR = os.path.join(_HERE, "plantilla")
+# Imágenes incrustadas del cuerpo (logo, etc.). El nombre de archivo SIN
+# extensión es el Content-ID al que apunta el HTML con src="cid:...".
+INLINE_DIR = os.path.join(PLANTILLA_DIR, "img")
 
 # Adjuntos que se envían con cada alta (deben existir en docs/).
 ATTACHMENTS = [
@@ -79,18 +85,42 @@ def load_template(nombre: str = "") -> tuple[str, str]:
     return asunto, cuerpo
 
 
+def _inline_images() -> list[tuple[str, str, bytes]]:
+    """Devuelve [(cid, subtype, bytes)] de cada imagen en plantilla/img/."""
+    out: list[tuple[str, str, bytes]] = []
+    if not os.path.isdir(INLINE_DIR):
+        return out
+    for fname in sorted(os.listdir(INLINE_DIR)):
+        path = os.path.join(INLINE_DIR, fname)
+        if not os.path.isfile(path):
+            continue
+        cid, ext = os.path.splitext(fname)
+        subtype = ext.lstrip(".").lower() or "png"
+        if subtype == "jpg":
+            subtype = "jpeg"
+        with open(path, "rb") as fh:
+            out.append((cid, subtype, fh.read()))
+    return out
+
+
 def build_message(to_email: str, nombre: str = "") -> EmailMessage:
     asunto, cuerpo_html = load_template(nombre)
 
     msg = EmailMessage()
     msg["To"] = to_email
-    msg["From"] = GMAIL_SENDER
+    msg["From"] = f"{GMAIL_SENDER_NAME} <{GMAIL_SENDER}>"
     msg["Subject"] = asunto
     msg.set_content(
         "Adjuntamos la documentación de inscripción de Aceptados. "
         "Si no ves el contenido, abre este correo en un cliente compatible con HTML."
     )
     msg.add_alternative(cuerpo_html, subtype="html")
+
+    # Incrustar las imágenes en la parte HTML (multipart/related) para que el
+    # logo se vea embebido y no como imagen rota. El HTML apunta con cid:<id>.
+    html_part = msg.get_payload()[-1]
+    for cid, subtype, data in _inline_images():
+        html_part.add_related(data, "image", subtype, cid=f"<{cid}>")
 
     for fname in ATTACHMENTS:
         path = os.path.join(DOCS_DIR, fname)
