@@ -322,6 +322,9 @@ ESPECIALIDAD_ALIASES = {
     "UAM-CBS": ["Ciencias Biológicas y de la Salud"],
     "UAM-CSH": ["Ciencias Sociales y Humanidades"],
     "UAM-CYAD": ["Ciencias y Artes para el Diseño"],
+    # UAEH: las carreras llegan como el nombre específico, no como la división.
+    # Ir agregando aquí cada carrera bajo su división.
+    "UAEH-MEDICINA": ["Médico Cirujano"],
 }
 
 # Umbral (0-100) de similitud difusa para emparejar la carrera con el NOMBRE
