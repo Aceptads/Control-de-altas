@@ -58,6 +58,24 @@ Lógica:
 
 En **Dry-run** no envía ni escribe: solo muestra a quién enviaría.
 
+## Clave / folio (columna K)
+
+La columna **K "Clave"** se llena con la clave del curso + un folio consecutivo,
+tomando el catálogo de la pestaña **Claves** (`Curso`, `Especialidad`, `Clave`):
+
+- **Escuela sin especialidad** (`SN` o vacía en Claves) → se usa solo la escuela:
+  `UNAM-001`, `UNAM-002`, `IPN-001`…
+- **Escuela con especialidad** → se empareja la **carrera (columna D)** contra la
+  columna *Especialidad* de Claves y se usa la clave completa: `UAM-CBI-001`,
+  `UAEH-MEDICINA-001`…
+
+El **folio se cuenta por cada clave** (cada una arranca en `001`) y continúa a
+partir del folio más alto que ya exista en la columna K, para **no reasignar**
+folios (una clave asignada es permanente; solo se llena si K está vacía).
+
+Si el curso no está en Claves, o es una escuela con especialidades y no se puede
+determinar cuál, la fila se deja **sin clave** (y se avisa en el log).
+
 ## Cómo ejecutarlo (botón manual)
 
 1. Ve a la pestaña **Actions** del repositorio.

@@ -43,6 +43,8 @@ SPREADSHEET_ID = os.environ.get(
 )
 FORM_ID = os.environ.get("FORM_ID", "1m5UruvwSlDdvGrMqKnrMQs3ptN1lLgD51sIGA7wHfUA")
 SHEET_NAME = os.environ.get("SHEET_NAME", "Altas")
+# Pestaña con el catálogo de claves (Curso, Especialidad, Clave).
+CLAVES_SHEET = os.environ.get("CLAVES_SHEET", "Claves")
 
 # Número de filas de encabezado antes de que empiecen los datos.
 HEADER_ROWS = int(os.environ.get("HEADER_ROWS", "1"))
@@ -273,6 +275,60 @@ def best_match(name: str, email: str, records: list[dict]) -> tuple[dict | None,
 
 
 # --------------------------------------------------------------------------- #
+# Claves / folios                                                              #
+# --------------------------------------------------------------------------- #
+def load_claves(sheets) -> dict:
+    """Lee la pestaña Claves (Curso, Especialidad, Clave) -> {curso_norm: [..]}."""
+    result = (
+        sheets.spreadsheets()
+        .values()
+        .get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"'{CLAVES_SHEET}'!A2:C",
+            valueRenderOption="UNFORMATTED_VALUE",
+        )
+        .execute()
+    )
+    by_curso: dict[str, list[dict]] = {}
+    for r in result.get("values", []):
+        curso = cell(r, 0)
+        if not curso:
+            continue
+        esp = cell(r, 1)
+        clave = cell(r, 2)
+        by_curso.setdefault(norm_title(curso), []).append(
+            {"curso": curso, "esp_norm": norm_title(esp), "clave": clave}
+        )
+    return by_curso
+
+
+def clave_base(curso: str, carrera: str, by_curso: dict) -> tuple[str | None, str]:
+    """Devuelve (base, error). La base es la clave SIN el folio.
+
+    - Escuela sin especialidad (esp 'SN' o vacía): base = la escuela (p.ej. UNAM).
+    - Escuela con especialidades: se empareja la carrera (col D) contra la
+      columna Especialidad de Claves; base = la clave completa (p.ej. UAM-CBI).
+    """
+    cands = by_curso.get(norm_title(curso))
+    if not cands:
+        return None, "curso no está en la hoja Claves"
+
+    sn = [c for c in cands if c["esp_norm"] in ("SN", "")]
+    if sn:
+        return sn[0]["curso"], ""
+
+    d = norm_title(carrera)
+    if d:
+        for c in cands:  # coincidencia exacta primero
+            if c["esp_norm"] == d:
+                return c["clave"], ""
+        for c in cands:  # si no, por contención
+            if c["esp_norm"] and (c["esp_norm"] in d or d in c["esp_norm"]):
+                return c["clave"], ""
+    return None, "no pude determinar la especialidad (col D)"
+
+
+# --------------------------------------------------------------------------- #
 # Proceso principal                                                            #
 # --------------------------------------------------------------------------- #
 def cell(row: list, index: int) -> str:
@@ -303,8 +359,12 @@ def main() -> None:
     records = load_form_records(forms)
     print(f"  {len(records)} respuestas cargadas.")
 
+    print("Leyendo catálogo de claves...")
+    by_curso = load_claves(sheets)
+    print(f"  {sum(len(v) for v in by_curso.values())} claves cargadas.")
+
     print("Leyendo hoja Altas...")
-    read_range = f"'{SHEET_NAME}'!A1:J"
+    read_range = f"'{SHEET_NAME}'!A1:K"
     result = (
         sheets.spreadsheets()
         .values()
@@ -323,6 +383,18 @@ def main() -> None:
     n_matched = 0
     n_not_found = 0
     n_docs = 0
+    n_claves = 0
+
+    # Folios por clave: arranca en el máximo ya presente en la columna K para
+    # NO reasignar folios existentes (una clave asignada es permanente).
+    folio_counters: dict[str, int] = {}
+    folio_re = re.compile(r"^(.*)-(\d+)$")
+    for row in data_rows:
+        existing = cell(row, 10)  # K
+        m = folio_re.match(existing) if existing else None
+        if m:
+            base, num = m.group(1), int(m.group(2))
+            folio_counters[base] = max(folio_counters.get(base, 0), num)
 
     for i, row in enumerate(data_rows):
         sheet_row = HEADER_ROWS + 1 + i
@@ -403,9 +475,28 @@ def main() -> None:
                 except Exception as exc:  # noqa: BLE001
                     print(f"    → ERROR al enviar a {correo}: {exc}")
 
+        # K: clave + folio. Solo se asigna si la celda está vacía (un folio no
+        # se reasigna). Usa la escuela (E) y la carrera (D); si esas celdas aún
+        # están vacías, cae a los valores recién calculados del formulario.
+        if not cell(row, 10):
+            curso_e = cell(row, 4) or curso
+            carrera_d = cell(row, 3) or especialidad
+            base, err = clave_base(curso_e, carrera_d, by_curso)
+            if base:
+                folio_counters[base] = folio_counters.get(base, 0) + 1
+                clave_val = f"{base}-{folio_counters[base]:03d}"
+                updates.append(
+                    {"range": f"'{SHEET_NAME}'!K{sheet_row}", "values": [[clave_val]]}
+                )
+                n_claves += 1
+                print(f"    → clave {clave_val}")
+            elif curso_e:
+                print(f"    → sin clave: {err}")
+
     print(
         f"\nResumen: {n_matched} emparejadas, {n_not_found} sin respuesta, "
-        f"{n_docs} con documentación enviada, {len(updates)} celdas por escribir."
+        f"{n_docs} con documentación enviada, {n_claves} claves asignadas, "
+        f"{len(updates)} celdas por escribir."
     )
 
     if not updates:
