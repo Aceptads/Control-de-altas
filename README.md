@@ -10,18 +10,19 @@ Para cada fila de la hoja `Altas` se leen los datos que tú capturas:
 | Columna | Dato (lo capturas tú) |
 |---------|------------------------|
 | A | Nombre |
-| C | Correo de contacto |
 | F | Costo |
 | G | Meses a pagar |
 
-El script busca la respuesta del formulario cuyo **correo** (pregunta
-*"CORREO DEL ALUMNO"*) coincida **exactamente** con la columna C, y usa el
-**nombre** como confirmación (tolera acentos y el orden apellido/nombre;
-compara contra *"NOMBRE COMPLETO DEL ALUMNO"* y *"NOMBRE DEL PADRE O TUTOR"*).
-Con esa respuesta llena:
+El script busca la respuesta del formulario **por el nombre** (columna A) con
+similitud difusa (tolera acentos y el orden apellido/nombre; compara contra
+*"NOMBRE COMPLETO DEL ALUMNO"* y *"NOMBRE DEL PADRE O TUTOR"*). Por eso el
+nombre en A debe parecerse al que el alumno puso en el formulario. Si dos
+personas distintas tienen un nombre igual de parecido, no adivina: deja la fila
+sin emparejar y avisa. Con la respuesta encontrada llena:
 
 | Columna | Se completa con |
 |---------|------------------|
+| C | Correo → *"CORREO DEL ALUMNO"* (se **trae del formulario**) |
 | D | Especialidad → *"CARRERA O LICENCIATURA A LA QUE DESEA INGRESAR"* |
 | E | Curso → **primera palabra** de *"CURSO QUE DESEA TOMAR"* (p. ej. `UNAM`, `IPN`, `UAEH`) |
 | H | Mensualidad → Costo (F) ÷ Meses (G) |
