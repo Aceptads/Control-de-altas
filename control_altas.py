@@ -33,6 +33,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from rapidfuzz import fuzz
 
+from send_docs import build_gmail_service, send_docs
+
 # --------------------------------------------------------------------------- #
 # Configuración (los valores por defecto se pueden sobreescribir por entorno)  #
 # --------------------------------------------------------------------------- #
@@ -51,6 +53,10 @@ OVERWRITE = os.environ.get("OVERWRITE", "false").lower() == "true"
 
 # Si es "true", muestra lo que haría pero no escribe en la hoja.
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+
+# Si es "true", envía la documentación de inscripción por Gmail a los alumnos
+# cuya fila lo requiera (ver lógica de columnas I/J más abajo).
+SEND_DOCS = os.environ.get("SEND_DOCS", "true").lower() == "true"
 
 # Umbral (0-100) de similitud de nombre para reportar un emparejamiento como
 # dudoso en el log (no bloquea; el correo exacto manda).
@@ -103,6 +109,15 @@ def name_similarity(a: str, b: str) -> float:
     if not na or not nb:
         return 0.0
     return fuzz.token_sort_ratio(na, nb)
+
+
+def norm_si(text: str) -> str:
+    """Normaliza un 'Sí'/'si'/'SI' -> 'si' y un 'No'/'NO' -> 'no' (sin acentos)."""
+    return strip_accents((text or "").strip().lower())
+
+
+def valid_email(text: str) -> bool:
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (text or "").strip()))
 
 
 def first_word(text: str) -> str:
@@ -274,6 +289,16 @@ def main() -> None:
 
     sheets, forms = build_services()
 
+    gmail = None
+    if SEND_DOCS:
+        gmail = build_gmail_service()
+        if gmail is None:
+            print(
+                "  [aviso] Faltan credenciales de Gmail "
+                "(GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN); "
+                "no se enviará documentación."
+            )
+
     print("Leyendo respuestas del formulario...")
     records = load_form_records(forms)
     print(f"  {len(records)} respuestas cargadas.")
@@ -297,6 +322,7 @@ def main() -> None:
     updates: list[dict] = []
     n_matched = 0
     n_not_found = 0
+    n_docs = 0
 
     for i, row in enumerate(data_rows):
         sheet_row = HEADER_ROWS + 1 + i
@@ -347,9 +373,39 @@ def main() -> None:
         schedule("E", 4, curso)
         schedule("H", 7, mensualidad)
 
+        # I y J: envío de documentación de inscripción.
+        #   I "Documentación enviada": se pone "Si" al enviar.
+        #   J "Alta": también "Si" al enviar; es el interruptor manual: si
+        #   alguien lo pone en "No" (porque cambió un dato) se vuelve a enviar.
+        # Se envía si I está en blanco (nunca enviada) o si J dice "No".
+        enviada = norm_si(cell(row, 8))  # I
+        alta = norm_si(cell(row, 9))     # J
+        should_send = (enviada != "si") or (alta == "no")
+
+        if SEND_DOCS and gmail and should_send:
+            if not valid_email(correo):
+                print(f"    → sin correo válido en C; no se envía documentación")
+            elif DRY_RUN:
+                print(f"    → (dry-run) enviaría documentación a {correo}")
+                n_docs += 1
+            else:
+                try:
+                    send_docs(gmail, correo, nombre)
+                    n_docs += 1
+                    print(f"    → documentación enviada a {correo}")
+                    # Estado: se escribe siempre (no depende de OVERWRITE).
+                    updates.append(
+                        {"range": f"'{SHEET_NAME}'!I{sheet_row}", "values": [["Si"]]}
+                    )
+                    updates.append(
+                        {"range": f"'{SHEET_NAME}'!J{sheet_row}", "values": [["Si"]]}
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    print(f"    → ERROR al enviar a {correo}: {exc}")
+
     print(
         f"\nResumen: {n_matched} emparejadas, {n_not_found} sin respuesta, "
-        f"{len(updates)} celdas por escribir."
+        f"{n_docs} con documentación enviada, {len(updates)} celdas por escribir."
     )
 
     if not updates:

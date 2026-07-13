@@ -12,6 +12,10 @@ on:
         description: "Sobrescribir celdas que ya tengan contenido"
         type: boolean
         default: false
+      send_docs:
+        description: "Enviar documentación por correo a los alumnos que la requieran"
+        type: boolean
+        default: true
 
 jobs:
   altas:
@@ -36,4 +40,8 @@ jobs:
           SHEET_NAME: "Altas"
           DRY_RUN: ${{ inputs.dry_run }}
           OVERWRITE: ${{ inputs.overwrite }}
+          SEND_DOCS: ${{ inputs.send_docs }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
         run: python control_altas.py
